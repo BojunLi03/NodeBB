@@ -1,7 +1,4 @@
-//'use strict';
-
-// The next line calls a function in a module that has not been updated to TS yet
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+'use strict';
 
 const user = require('../user');
 const posts = require('../posts');
@@ -189,7 +186,6 @@ modsController.postQueue = async function (req, res, next) {
         const text: string = postData[0].data.tid ? '[[post-queue:reply]]' : '[[post-queue:topic]]';
         crumbs.push({ text: text });
     }
-
     res.render('post-queue', {
         title: '[[pages:post-queue]]',
         posts: postData,
