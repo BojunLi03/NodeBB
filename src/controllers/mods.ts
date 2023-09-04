@@ -1,6 +1,10 @@
 'use strict';
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-assignment
+// not for now
+
 const user = require('../user');
+
 const posts = require('../posts');
 const flags = require('../flags');
 const analytics = require('../analytics');
@@ -13,6 +17,7 @@ const helpers = require('./helpers');
 const modsController = module.exports;
 modsController.flags = {};
 
+//type Treat = { name: string }
 modsController.flags.list = async function (req, res) {
     const validFilters = ['assignee', 'state', 'reporterId', 'type', 'targetUid', 'cid', 'quick', 'page', 'perPage'];
     const validSorts = ['newest', 'oldest', 'reports', 'upvotes', 'downvotes', 'replies'];
