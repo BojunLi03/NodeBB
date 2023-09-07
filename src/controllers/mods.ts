@@ -158,7 +158,9 @@ modsController.flags.detail = async function (req, res, next) {
   }));
 };
 
-modsController.postQueue = async function (req: any, res: any, next: any): Promise<void> {
+modsController.flags.postQueue = async function (req: any, res: any, next: any): Promise<void> {
+   
+   
     if (!req.loggedIn) {
         return next();
     }
