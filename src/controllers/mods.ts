@@ -1,179 +1,181 @@
 'use strict';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-assignment
-// not for now
+import * as user from '../user';
+import * as posts from '../posts';
+import * as flags from '../flags';
+import * as analytics from '../analytics';
+import * as plugins from '../plugins';
+import * as pagination from '../pagination';
+import * as privileges from '../privileges';
+import * as utils from '../utils';
+import * as helpers from './helpers';
 
-const user = require('../user');
+interface ModsController {
+  flags: {
+    list: (req: any, res: any) => Promise<void>;
+    detail: (req: any, res: any, next: any) => Promise<void>;
+    postQueue: (req: any, res: any, next: any) => Promise<void>;
+  };
+}
 
-const posts = require('../posts');
-const flags = require('../flags');
-const analytics = require('../analytics');
-const plugins = require('../plugins');
-const pagination = require('../pagination');
-const privileges = require('../privileges');
-const utils = require('../utils');
-const helpers = require('./helpers');
+const modsController: ModsController = {} as ModsController;
 
-const modsController = module.exports;
-modsController.flags = {};
-
-//type Treat = { name: string }
 modsController.flags.list = async function (req, res) {
-    const validFilters = ['assignee', 'state', 'reporterId', 'type', 'targetUid', 'cid', 'quick', 'page', 'perPage'];
-    const validSorts = ['newest', 'oldest', 'reports', 'upvotes', 'downvotes', 'replies'];
+  const validFilters: string[] = ['assignee', 'state', 'reporterId', 'type', 'targetUid', 'cid', 'quick', 'page', 'perPage'];
+  const validSorts: string[] = ['newest', 'oldest', 'reports', 'upvotes', 'downvotes', 'replies'];
 
-    const results = await Promise.all([
-        user.isAdminOrGlobalMod(req.uid),
-        user.getModeratedCids(req.uid),
-        plugins.hooks.fire('filter:flags.validateFilters', { filters: validFilters }),
-        plugins.hooks.fire('filter:flags.validateSort', { sorts: validSorts }),
-    ]);
-    const [isAdminOrGlobalMod, moderatedCids,, { sorts }] = results;
-    let [,, { filters }] = results;
+  const results = await Promise.all([
+    user.isAdminOrGlobalMod(req.uid),
+    user.getModeratedCids(req.uid),
+    plugins.hooks.fire('filter:flags.validateFilters', { filters: validFilters }),
+    plugins.hooks.fire('filter:flags.validateSort', { sorts: validSorts }),
+  ]);
+  const [isAdminOrGlobalMod, moderatedCids,, { sorts }] = results;
+  let [,, { filters }] = results;
 
-    if (!(isAdminOrGlobalMod || !!moderatedCids.length)) {
-        return helpers.notAllowed(req, res);
+  if (!(isAdminOrGlobalMod || !!moderatedCids.length)) {
+    return helpers.notAllowed(req, res);
+  }
+
+  if (!isAdminOrGlobalMod && moderatedCids.length) {
+    res.locals.cids = moderatedCids.map(cid => String(cid));
+  }
+
+  // Parse query string params for filters, eliminate non-valid filters
+  filters = filters.reduce((memo, cur) => {
+    if (req.query.hasOwnProperty(cur)) {
+      if (typeof req.query[cur] === 'string' && req.query[cur].trim() !== '') {
+        memo[cur] = req.query[cur].trim();
+      } else if (Array.isArray(req.query[cur]) && req.query[cur].length) {
+        memo[cur] = req.query[cur];
+      }
     }
 
-    if (!isAdminOrGlobalMod && moderatedCids.length) {
-        res.locals.cids = moderatedCids.map(cid => String(cid));
+    return memo;
+  }, {});
+
+  let hasFilter = !!Object.keys(filters).length;
+
+  if (res.locals.cids) {
+    if (!filters.cid) {
+      // If mod and no cid filter, add filter for their modded categories
+      filters.cid = res.locals.cids;
+    } else if (Array.isArray(filters.cid)) {
+      // Remove cids they do not moderate
+      filters.cid = filters.cid.filter(cid => res.locals.cids.includes(String(cid)));
+    } else if (!res.locals.cids.includes(String(filters.cid))) {
+      filters.cid = res.locals.cids;
+      hasFilter = false;
     }
+  }
 
-    // Parse query string params for filters, eliminate non-valid filters
-    filters = filters.reduce((memo, cur) => {
-        if (req.query.hasOwnProperty(cur)) {
-            if (typeof req.query[cur] === 'string' && req.query[cur].trim() !== '') {
-                memo[cur] = req.query[cur].trim();
-            } else if (Array.isArray(req.query[cur]) && req.query[cur].length) {
-                memo[cur] = req.query[cur];
-            }
-        }
+  // Pagination doesn't count as a filter
+  if (
+    (Object.keys(filters).length === 1 && filters.hasOwnProperty('page')) ||
+    (Object.keys(filters).length === 2 && filters.hasOwnProperty('page') && filters.hasOwnProperty('perPage'))
+  ) {
+    hasFilter = false;
+  }
 
-        return memo;
-    }, {});
+  // Parse sort from query string
+  let sort;
+  if (req.query.sort) {
+    sort = sorts.includes(req.query.sort) ? req.query.sort : null;
+  }
+  if (sort === 'newest') {
+    sort = undefined;
+  }
+  hasFilter = hasFilter || !!sort;
 
-    let hasFilter = !!Object.keys(filters).length;
+  const [flagsData, analyticsData, selectData] = await Promise.all([
+    flags.list({
+      filters: filters,
+      sort: sort,
+      uid: req.uid,
+      query: req.query,
+    }),
+    analytics.getDailyStatsForSet('analytics:flags', Date.now(), 30),
+    helpers.getSelectedCategory(filters.cid),
+  ]);
 
-    if (res.locals.cids) {
-        if (!filters.cid) {
-            // If mod and no cid filter, add filter for their modded categories
-            filters.cid = res.locals.cids;
-        } else if (Array.isArray(filters.cid)) {
-            // Remove cids they do not moderate
-            filters.cid = filters.cid.filter(cid => res.locals.cids.includes(String(cid)));
-        } else if (!res.locals.cids.includes(String(filters.cid))) {
-            filters.cid = res.locals.cids;
-            hasFilter = false;
-        }
-    }
-
-    // Pagination doesn't count as a filter
-    if (
-        (Object.keys(filters).length === 1 && filters.hasOwnProperty('page')) ||
-        (Object.keys(filters).length === 2 && filters.hasOwnProperty('page') && filters.hasOwnProperty('perPage'))
-    ) {
-        hasFilter = false;
-    }
-
-    // Parse sort from query string
-    let sort;
-    if (req.query.sort) {
-        sort = sorts.includes(req.query.sort) ? req.query.sort : null;
-    }
-    if (sort === 'newest') {
-        sort = undefined;
-    }
-    hasFilter = hasFilter || !!sort;
-
-    const [flagsData, analyticsData, selectData] = await Promise.all([
-        flags.list({
-            filters: filters,
-            sort: sort,
-            uid: req.uid,
-            query: req.query,
-        }),
-        analytics.getDailyStatsForSet('analytics:flags', Date.now(), 30),
-        helpers.getSelectedCategory(filters.cid),
-    ]);
-
-    res.render('flags/list', {
-        flags: flagsData.flags,
-        analytics: analyticsData,
-        selectedCategory: selectData.selectedCategory,
-        hasFilter: hasFilter,
-        filters: filters,
-        expanded: !!(filters.assignee || filters.reporterId || filters.targetUid),
-        sort: sort || 'newest',
-        title: '[[pages:flags]]',
-        pagination: pagination.create(flagsData.page, flagsData.pageCount, req.query),
-        breadcrumbs: helpers.buildBreadcrumbs([{ text: '[[pages:flags]]' }]),
-    });
+  res.render('flags/list', {
+    flags: flagsData.flags,
+    analytics: analyticsData,
+    selectedCategory: selectData.selectedCategory,
+    hasFilter: hasFilter,
+    filters: filters,
+    expanded: !!(filters.assignee || filters.reporterId || filters.targetUid),
+    sort: sort || 'newest',
+    title: '[[pages:flags]]',
+    pagination: pagination.create(flagsData.page, flagsData.pageCount, req.query),
+    breadcrumbs: helpers.buildBreadcrumbs([{ text: '[[pages:flags]]' }]),
+  });
 };
 
 modsController.flags.detail = async function (req, res, next) {
-    const results = await utils.promiseParallel({
-        isAdminOrGlobalMod: user.isAdminOrGlobalMod(req.uid),
-        moderatedCids: user.getModeratedCids(req.uid),
-        flagData: flags.get(req.params.flagId),
-        assignees: user.getAdminsandGlobalModsandModerators(),
-        privileges: Promise.all(['global', 'admin'].map(async type => privileges[type].get(req.uid))),
-    });
-    results.privileges = { ...results.privileges[0], ...results.privileges[1] };
+  const results = await utils.promiseParallel({
+    isAdminOrGlobalMod: user.isAdminOrGlobalMod(req.uid),
+    moderatedCids: user.getModeratedCids(req.uid),
+    flagData: flags.get(req.params.flagId),
+    assignees: user.getAdminsandGlobalModsandModerators(),
+    privileges: Promise.all(['global', 'admin'].map(async type => privileges[type].get(req.uid))),
+  });
+  results.privileges = { ...results.privileges[0], ...results.privileges[1] };
 
-    if (!results.flagData || (!(results.isAdminOrGlobalMod || !!results.moderatedCids.length))) {
-        return next(); // 404
-    }
+  if (!results.flagData || (!(results.isAdminOrGlobalMod || !!results.moderatedCids.length))) {
+    return next(); // 404
+  }
 
-    results.flagData.history = results.isAdminOrGlobalMod ? (await flags.getHistory(req.params.flagId)) : null;
+  results.flagData.history = results.isAdminOrGlobalMod ? (await flags.getHistory(req.params.flagId)) : null;
 
-    if (results.flagData.type === 'user') {
-        results.flagData.type_path = 'uid';
-    } else if (results.flagData.type === 'post') {
-        results.flagData.type_path = 'post';
-    }
+  if (results.flagData.type === 'user') {
+    results.flagData.type_path = 'uid';
+  } else if (results.flagData.type === 'post') {
+    results.flagData.type_path = 'post';
+  }
 
-    res.render('flags/detail', Object.assign(results.flagData, {
-        assignees: results.assignees,
-        type_bool: ['post', 'user', 'empty'].reduce((memo, cur) => {
-            if (cur !== 'empty') {
-                memo[cur] = results.flagData.type === cur && (
-                    !results.flagData.target ||
-                    !!Object.keys(results.flagData.target).length
-                );
-            } else {
-                memo[cur] = !Object.keys(results.flagData.target).length;
-            }
+  res.render('flags/detail', Object.assign(results.flagData, {
+    assignees: results.assignees,
+    type_bool: ['post', 'user', 'empty'].reduce((memo, cur) => {
+      if (cur !== 'empty') {
+        memo[cur] = results.flagData.type === cur && (
+          !results.flagData.target ||
+          !!Object.keys(results.flagData.target).length
+        );
+      } else {
+        memo[cur] = !Object.keys(results.flagData.target).length;
+      }
 
-            return memo;
-        }, {}),
-        states: Object.fromEntries(flags._states),
-        title: `[[pages:flag-details, ${req.params.flagId}]]`,
-        privileges: results.privileges,
-        breadcrumbs: helpers.buildBreadcrumbs([
-            { text: '[[pages:flags]]', url: '/flags' },
-            { text: `[[pages:flag-details, ${req.params.flagId}]]` },
-        ]),
-    }));
+      return memo;
+    }, {}),
+    states: Object.fromEntries(flags._states),
+    title: `[[pages:flag-details, ${req.params.flagId}]]`,
+    privileges: results.privileges,
+    breadcrumbs: helpers.buildBreadcrumbs([
+      { text: '[[pages:flags]]', url: '/flags' },
+      { text: `[[pages:flag-details, ${req.params.flagId}]]` },
+    ]),
+  }));
 };
 
-modsController.postQueue = async function (req, res, next) {
+modsController.postQueue = async function (req: any, res: any, next: any): Promise<void> {
     if (!req.loggedIn) {
         return next();
     }
-    const { id } = req.params;
-    const { cid } = req.query;
-    const page = parseInt(req.query.page, 10) || 1;
-    const postsPerPage = 20;
+    const { id }: { id: string } = req.params;
+    const { cid }: { cid: string } = req.query;
+    const page: number = parseInt(req.query.page, 10) || 1;
+    const postsPerPage: number = 20;
 
-    let postData = await posts.getQueuedPosts({ id: id });
-    const [isAdmin, isGlobalMod, moderatedCids, categoriesData] = await Promise.all([
+    let postData: any[] = await posts.getQueuedPosts({ id: id });
+    const [isAdmin, isGlobalMod, moderatedCids, categoriesData]: [boolean, boolean, number[], any] = await Promise.all([
         user.isAdministrator(req.uid),
         user.isGlobalModerator(req.uid),
         user.getModeratedCids(req.uid),
         helpers.getSelectedCategory(cid),
     ]);
 
-    postData = postData.filter(p => p &&
+    postData = postData.filter((p: any) => p &&
         (!categoriesData.selectedCids.length || categoriesData.selectedCids.includes(p.category.cid)) &&
         (isAdmin || isGlobalMod || moderatedCids.includes(Number(p.category.cid)) || req.uid === p.user.uid));
 
