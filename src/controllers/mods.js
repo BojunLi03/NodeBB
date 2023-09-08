@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -54,6 +54,8 @@ modsController.flags.list = function (req, res) {
         ]);
         const [isAdminOrGlobalMod, moderatedCids, , { sorts }] = results;
         let [, , { filters }] = results;
+        // The next line calls a function in a module that has not been updated to TS yet
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         if (!(isAdminOrGlobalMod || !!moderatedCids.length)) {
             return helpers.notAllowed(req, res);
         }
@@ -172,19 +174,37 @@ modsController.flags.postQueue = function (req, res, next) {
         if (!req.loggedIn) {
             return next();
         }
+        // The next line calls a function in a module that has not been updated to TS yet
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         const { id } = req.params;
+        // The next line calls a function in a module that has not been updated to TS yet
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         const { cid } = req.query;
+        // The next line calls a function in a module that has not been updated to TS yet
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
         const page = parseInt(req.query.page, 10) || 1;
         const postsPerPage = 20;
+        // The next line calls a function in a module that has not been updated to TS yet
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         let postData = yield posts.getQueuedPosts({ id: id });
         const [isAdmin, isGlobalMod, moderatedCids, categoriesData] = yield Promise.all([
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
             user.isAdministrator(req.uid),
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
             user.isGlobalModerator(req.uid),
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
             user.getModeratedCids(req.uid),
             helpers.getSelectedCategory(cid),
         ]);
-        postData = postData.filter((p) => p &&
+        postData = postData.filter(p => p &&
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
             (!categoriesData.selectedCids.length || categoriesData.selectedCids.includes(p.category.cid)) &&
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
             (isAdmin || isGlobalMod || moderatedCids.includes(Number(p.category.cid)) || req.uid === p.user.uid));
         ({ posts: postData } = yield plugins.hooks.fire('filter:post-queue.get', {
             posts: postData,
@@ -196,9 +216,16 @@ modsController.flags.postQueue = function (req, res, next) {
         postData = postData.slice(start, stop + 1);
         const crumbs = [{ text: '[[pages:post-queue]]', url: id ? '/post-queue' : undefined }];
         if (id && postData.length) {
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
             const text = postData[0].data.tid ? '[[post-queue:reply]]' : '[[post-queue:topic]]';
             crumbs.push({ text: text });
         }
-        res.render('post-queue', Object.assign(Object.assign({ title: '[[pages:post-queue]]', posts: postData, isAdmin: isAdmin, canAccept: isAdmin || isGlobalMod || !!moderatedCids.length }, categoriesData), { allCategoriesUrl: `post-queue${helpers.buildQueryString(req.query, 'cid', '')}`, pagination: pagination.create(page, pageCount), breadcrumbs: helpers.buildBreadcrumbs(crumbs), singlePost: !!id }));
+        // The next line calls a function in a module that has not been updated to TS yet
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+        res.render('post-queue', Object.assign(Object.assign({ title: '[[pages:post-queue]]', posts: postData, isAdmin: isAdmin, canAccept: (isAdmin || isGlobalMod || !!moderatedCids.length) }, categoriesData), { 
+            // The next line calls a function in a module that has not been updated to TS yet
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            allCategoriesUrl: `post-queue${helpers.buildQueryString(req.query, 'cid', '')}`, pagination: pagination.create(page, pageCount), breadcrumbs: helpers.buildBreadcrumbs(crumbs), singlePost: !!id }));
     });
 };
